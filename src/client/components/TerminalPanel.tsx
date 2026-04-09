@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "lucide-react";
 import { useLogStream } from "../hooks/useLogStream";
 import { useStore } from "../store/scripts";
@@ -47,7 +48,9 @@ export function TerminalPanel() {
     });
 
     const fitAddon = new FitAddon();
+    const webLinksAddon = new WebLinksAddon();
     terminal.loadAddon(fitAddon);
+    terminal.loadAddon(webLinksAddon);
     terminal.open(containerRef.current);
     fitAddon.fit();
 
