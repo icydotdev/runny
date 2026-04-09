@@ -31,17 +31,17 @@ Works with **npm**, **pnpm**, and **yarn** workspaces. Monorepos with 50 package
 ## Quick Start
 
 ```bash
-npx @icydotdev/runny
+npm i -g @icydotdev/runny
+cd your-project
+runny
 ```
 
 That's it. Opens your browser. Every script is right there.
 
-Or install globally:
+Or run without installing:
 
 ```bash
-npm i -g @icydotdev/runny
-cd your-project
-runny
+npx @icydotdev/runny
 ```
 
 ## Features
