@@ -20,7 +20,7 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 
 const portIndex = args.indexOf("--port");
-const port =
+const preferredPort =
   portIndex !== -1 ? parseInt(args[portIndex + 1], 10) : 3717;
 const noBrowser = args.includes("--no-browser");
 const targetDir = process.env.TARGET_DIR || process.cwd();
@@ -33,7 +33,7 @@ if (!fs.existsSync(path.join(targetDir, "package.json"))) {
   process.exit(1);
 }
 
-startServer(targetDir, port).then(() => {
+startServer(targetDir, preferredPort).then(({ port }) => {
   if (!noBrowser) {
     open(`http://localhost:${port}`);
   }

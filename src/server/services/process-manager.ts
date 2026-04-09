@@ -35,22 +35,13 @@ export class ProcessManager {
     return `${packageName}:${scriptName}`;
   }
 
-  run(
+  private _spawn(
+    id: string,
     packageName: string,
     packagePath: string,
-    scriptName: string
+    scriptName: string,
+    command: string
   ): ManagedProcess {
-    const id = this.makeId(packageName, scriptName);
-
-    // If already running, stop first
-    const existing = this.processes.get(id);
-    if (existing && existing.status === "running") {
-      this.stop(id);
-    }
-
-    const runCmd = getRunCommand(this.packageManager);
-    const command = `${runCmd} ${scriptName}`;
-
     const child = spawn(command, {
       cwd: packagePath,
       shell: true,
@@ -122,6 +113,32 @@ export class ProcessManager {
     };
   }
 
+  runRaw(id: string, cwd: string, command: string): ManagedProcess {
+    const existing = this.processes.get(id);
+    if (existing && existing.status === "running") {
+      this.stop(id);
+    }
+    return this._spawn(id, id, cwd, id, command);
+  }
+
+  run(
+    packageName: string,
+    packagePath: string,
+    scriptName: string
+  ): ManagedProcess {
+    const id = this.makeId(packageName, scriptName);
+
+    const existing = this.processes.get(id);
+    if (existing && existing.status === "running") {
+      this.stop(id);
+    }
+
+    const runCmd = getRunCommand(this.packageManager);
+    const command = `${runCmd} ${scriptName}`;
+
+    return this._spawn(id, packageName, packagePath, scriptName, command);
+  }
+
   stop(id: string): boolean {
     const managed = this.processes.get(id);
     if (!managed || managed.status !== "running") return false;
@@ -129,7 +146,6 @@ export class ProcessManager {
     if (managed.pid) {
       treeKill(managed.pid, "SIGTERM", (err) => {
         if (err) {
-          // Force kill if SIGTERM fails
           treeKill(managed.pid!, "SIGKILL");
         }
       });

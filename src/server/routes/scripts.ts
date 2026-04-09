@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { processManager } from "../services/process-manager.js";
-import type { PackageInfo } from "../types.js";
+import type { AppConfig, PackageInfo } from "../types.js";
 
-export function createScriptsRouter(packages: PackageInfo[]): Router {
+export function createScriptsRouter(packages: PackageInfo[], config: AppConfig): Router {
   const router = Router();
 
   router.post("/api/scripts/run", (req, res) => {
@@ -42,6 +42,16 @@ export function createScriptsRouter(packages: PackageInfo[]): Router {
 
   router.get("/api/scripts/status", (_req, res) => {
     res.json(processManager.getAllStatuses());
+  });
+
+  router.post("/api/install", (_req, res) => {
+    const command = `${config.packageManager} install`;
+    const managed = processManager.runRaw(
+      "__runny:install",
+      config.rootPath,
+      command
+    );
+    res.json(managed);
   });
 
   return router;

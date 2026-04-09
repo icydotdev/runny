@@ -10,10 +10,24 @@ import { createPackagesRouter } from "./routes/packages.js";
 import { createScriptsRouter } from "./routes/scripts.js";
 import { setupWebSocket } from "./ws/log-stream.js";
 import type { AppConfig } from "./types.js";
+import net from "net";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-export async function startServer(targetDir: string, port: number) {
+function findAvailablePort(startPort: number): Promise<number> {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.listen(startPort, () => {
+      server.close(() => resolve(startPort));
+    });
+    server.on("error", () => {
+      resolve(findAvailablePort(startPort + 1));
+    });
+  });
+}
+
+export async function startServer(targetDir: string, preferredPort: number) {
+  const port = await findAvailablePort(preferredPort);
   const pm = detectPackageManager(targetDir);
   processManager.setPackageManager(pm);
 
@@ -32,7 +46,7 @@ export async function startServer(targetDir: string, port: number) {
   // API routes
   app.use(createConfigRouter(config));
   app.use(createPackagesRouter(packages));
-  app.use(createScriptsRouter(packages));
+  app.use(createScriptsRouter(packages, config));
 
   // Serve static frontend
   const clientDir = path.join(__dirname, "..", "client");
@@ -47,6 +61,9 @@ export async function startServer(targetDir: string, port: number) {
   server.listen(port, () => {
     console.log(`\n  🏃 Runny is running!\n`);
     console.log(`  Local:   http://localhost:${port}`);
+    if (port !== preferredPort) {
+      console.log(`  (port ${preferredPort} was in use, using ${port} instead)`);
+    }
     console.log(`  Target:  ${targetDir}`);
     console.log(`  Manager: ${pm}`);
     console.log(`  Packages: ${packages.length}\n`);
@@ -62,5 +79,5 @@ export async function startServer(targetDir: string, port: number) {
   process.on("SIGINT", cleanup);
   process.on("SIGTERM", cleanup);
 
-  return server;
+  return { server, port };
 }

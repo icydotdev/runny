@@ -60,3 +60,8 @@ export async function stopScript(id: string): Promise<void> {
     body: JSON.stringify({ id }),
   });
 }
+
+export async function runInstall(): Promise<ManagedProcess> {
+  const res = await fetch(`${BASE}/api/install`, { method: "POST" });
+  return res.json();
+}
