@@ -36,10 +36,17 @@ export function Header() {
       }}
     >
       <div className="flex items-center gap-3">
-        <img src={logoSvg} alt="Runny" className="w-7 h-7" />
-        <h1 className="text-lg font-bold tracking-tight">
-          <span className="text-runny-accent">runny</span>
-        </h1>
+        <a
+          href="https://www.npmjs.com/package/@icydotdev/runny"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+        >
+          <img src={logoSvg} alt="Runny" className="w-7 h-7" />
+          <span className="text-lg font-bold tracking-tight text-runny-accent">
+            runny
+          </span>
+        </a>
         {config && (
           <>
             <span style={{ color: "var(--color-muted)" }}>/</span>
