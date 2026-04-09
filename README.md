@@ -26,7 +26,7 @@ Works with **npm**, **pnpm**, and **yarn** workspaces. Monorepos with 50 package
 
 <!-- TODO: Replace with actual GIF/screenshot -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/screenshot-dark.png" width="800" alt="Runny dashboard" />
+  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/runny-dashboard.jpg" width="800" alt="Runny dashboard" />
 </p>
 
 ## Quick Start
@@ -108,12 +108,12 @@ npx @icydotdev/runny
 
 ### Supported project types
 
-| Type | How it works |
-|------|-------------|
-| **Single package** | Reads `package.json` scripts, shows them flat (no collapsing) |
-| **npm workspaces** | Reads `workspaces` field from root `package.json` |
-| **yarn workspaces** | Reads `workspaces` field from root `package.json` |
-| **pnpm workspaces** | Reads `pnpm-workspace.yaml` |
+| Type                | How it works                                                  |
+| ------------------- | ------------------------------------------------------------- |
+| **Single package**  | Reads `package.json` scripts, shows them flat (no collapsing) |
+| **npm workspaces**  | Reads `workspaces` field from root `package.json`             |
+| **yarn workspaces** | Reads `workspaces` field from root `package.json`             |
+| **pnpm workspaces** | Reads `pnpm-workspace.yaml`                                   |
 
 ### How it works
 
@@ -132,30 +132,35 @@ Your code is never uploaded anywhere. Everything runs locally on your machine.
 <summary><strong>Does this upload my code / phone home?</strong></summary>
 
 No. Runny is a local-only tool. The server runs on `localhost`, the frontend is bundled static assets served from your machine. There are zero network requests to external services.
+
 </details>
 
 <details>
 <summary><strong>Can I use this in CI?</strong></summary>
 
 Runny is designed as a local development tool, not for CI. Use your package manager's built-in script runners for CI.
+
 </details>
 
 <details>
 <summary><strong>What about long-running scripts like `dev`?</strong></summary>
 
 That's Runny's sweet spot. Start your dev servers, watch processes, and build watchers — see all their output in one place, stop them cleanly with one click.
+
 </details>
 
 <details>
 <summary><strong>Will stopping a script leave zombie processes?</strong></summary>
 
 No. Runny uses <a href="https://www.npmjs.com/package/tree-kill">tree-kill</a> to kill entire process trees. When you stop `pnpm run dev`, it kills pnpm, node, and any child processes spawned by your dev server.
+
 </details>
 
 <details>
 <summary><strong>Does it work with Turborepo / Nx / Lerna?</strong></summary>
 
 Yes — Runny reads workspace configuration (pnpm-workspace.yaml or the workspaces field in package.json), not your build orchestrator. Your Turbo/Nx scripts appear like any other script and can be run from Runny.
+
 </details>
 
 ## Roadmap
