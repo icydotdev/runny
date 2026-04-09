@@ -24,9 +24,8 @@ Stop memorising script names. Stop tabbing between terminals. **Runny** scans yo
 
 Works with **npm**, **pnpm**, and **yarn** workspaces. Monorepos with 50 packages or solo projects with 3 scripts — same experience.
 
-<!-- TODO: Replace with actual GIF/screenshot -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/runny-dashboard.jpg" width="800" alt="Runny dashboard" />
+  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/runny.gif" width="800" alt="Runny dashboard" />
 </p>
 
 ## Quick Start
@@ -65,7 +64,7 @@ runny
 <details>
 <summary>Dark mode</summary>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/screenshot-dark.png" width="800" alt="Dark mode" />
+  <img src="https://raw.githubusercontent.com/icydotdev/runny/main/assets/runny-dashboard.png" width="800" alt="Dark mode" />
 </p>
 </details>
 
