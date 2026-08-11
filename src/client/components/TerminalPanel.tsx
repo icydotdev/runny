@@ -1,11 +1,11 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Terminal as XTerminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "lucide-react";
 import { useLogStream } from "../hooks/useLogStream";
 import { useStore } from "../store/scripts";
-import { useThemeStore } from "../hooks/useTheme";
+import { SessionStrip } from "./SessionStrip";
 import "@xterm/xterm/css/xterm.css";
 
 const DARK_THEME = {
@@ -26,11 +26,23 @@ export function TerminalPanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  // State (not just ref) so useLogStream re-runs once xterm is ready.
+  const [terminal, setTerminal] = useState<XTerminal | null>(null);
   const selectedScriptId = useStore((s) => s.selectedScriptId);
+  const packages = useStore((s) => s.packages);
   const scriptState = useStore((s) =>
     s.selectedScriptId ? s.scriptStates.get(s.selectedScriptId) : undefined
   );
-  const theme = useThemeStore((s) => s.theme);
+  const theme = useStore((s) => s.theme);
+
+  const selectedLabel = (() => {
+    if (!selectedScriptId) return null;
+    if (packages.length <= 1) {
+      const colon = selectedScriptId.lastIndexOf(":");
+      return colon === -1 ? selectedScriptId : selectedScriptId.slice(colon + 1);
+    }
+    return selectedScriptId;
+  })();
 
   // Initialize xterm
   useEffect(() => {
@@ -56,6 +68,7 @@ export function TerminalPanel() {
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
+    setTerminal(terminal);
 
     const resizeObserver = new ResizeObserver(() => {
       fitAddon.fit();
@@ -66,6 +79,7 @@ export function TerminalPanel() {
       resizeObserver.disconnect();
       terminal.dispose();
       terminalRef.current = null;
+      setTerminal(null);
     };
   }, []);
 
@@ -77,12 +91,13 @@ export function TerminalPanel() {
     }
   }, [theme]);
 
-  useLogStream(terminalRef.current);
+  useLogStream(terminal);
 
   const status = scriptState?.status;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--color-bg)" }}>
+      <SessionStrip />
       {/* Terminal header */}
       <div
         className="h-10 flex items-center px-4 gap-2 shrink-0"
@@ -95,7 +110,7 @@ export function TerminalPanel() {
         {selectedScriptId ? (
           <>
             <span className="text-sm" style={{ color: "var(--color-text)" }}>
-              {selectedScriptId}
+              {selectedLabel}
             </span>
             {status && (
               <span

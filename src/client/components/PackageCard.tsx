@@ -1,8 +1,9 @@
 import React from "react";
 import { ChevronDown, Package } from "lucide-react";
+import { ScriptGroupBlock } from "./ScriptGroup";
 import { ScriptRow } from "./ScriptRow";
 import { useStore } from "../store/scripts";
-import { groupScripts } from "../lib/group-scripts";
+import { groupScripts, type ScriptTreeNode } from "../lib/group-scripts";
 import type { PackageInfo } from "../lib/api";
 
 interface PackageCardProps {
@@ -14,10 +15,16 @@ export function PackageCard({ pkg }: PackageCardProps) {
   const isCollapsed = useStore((s) => s.sidebarCollapsed.get(pkg.name));
   const toggleCollapsed = useStore((s) => s.togglePackageCollapsed);
   const scriptStates = useStore((s) => s.scriptStates);
+  const packageCount = useStore((s) => s.packages.length);
 
   const groupingEnabled = useStore((s) => s.groupingEnabled);
+  const hiddenScripts = useStore((s) => s.hiddenScripts);
+  // Single-package projects: flat list, no package-name chrome.
+  const flat = packageCount <= 1;
 
-  const scripts = Object.entries(pkg.scripts);
+  const scripts = Object.entries(pkg.scripts).filter(
+    ([name]) => !hiddenScripts.includes(`${pkg.name}:${name}`)
+  );
   const filteredScripts = searchQuery
     ? scripts.filter(([name]) =>
         name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -26,17 +33,56 @@ export function PackageCard({ pkg }: PackageCardProps) {
 
   if (filteredScripts.length === 0) return null;
 
-  const groups = groupingEnabled
+  const nodes: ScriptTreeNode[] = groupingEnabled
     ? groupScripts(filteredScripts)
     : filteredScripts.map(([name, command]) => ({
-        prefix: null as string | null,
-        scripts: [[name, command]] as Array<[string, string]>,
+        path: name,
+        label: name,
+        script: [name, command] as [string, string],
+        children: [],
       }));
 
   const runningCount = scripts.filter(([name]) => {
     const id = `${pkg.name}:${name}`;
     return scriptStates.get(id)?.status === "running";
   }).length;
+
+  const scriptList = (
+    <div className="pb-1">
+      {nodes.map((node, i) => (
+        <div key={node.path}>
+          {i > 0 && (
+            <div
+              className="mx-3 my-1"
+              style={{
+                borderTop: "1px solid var(--color-border)",
+                opacity: 0.5,
+              }}
+            />
+          )}
+          {groupingEnabled ? (
+            <ScriptGroupBlock packageName={pkg.name} node={node} />
+          ) : (
+            node.script && (
+              <ScriptRow
+                packageName={pkg.name}
+                scriptName={node.script[0]}
+                command={node.script[1]}
+              />
+            )
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  if (flat) {
+    return (
+      <div style={{ borderBottom: "1px solid var(--color-border)" }}>
+        {scriptList}
+      </div>
+    );
+  }
 
   return (
     <div style={{ borderBottom: "1px solid var(--color-border)" }}>
@@ -69,33 +115,7 @@ export function PackageCard({ pkg }: PackageCardProps) {
           {filteredScripts.length}
         </span>
       </button>
-      {!isCollapsed && (
-        <div className="pb-1">
-          {groups.map((group, i) => (
-            <div key={group.prefix ?? group.scripts[0][0]}>
-              {i > 0 && (
-                <div
-                  className="mx-3 my-1"
-                  style={{ borderTop: "1px solid var(--color-border)", opacity: 0.5 }}
-                />
-              )}
-              {group.scripts.map(([name, command]) => {
-                const isVariant =
-                  group.prefix !== null && name !== group.prefix;
-                return (
-                  <ScriptRow
-                    key={name}
-                    packageName={pkg.name}
-                    scriptName={name}
-                    command={command}
-                    indent={isVariant}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
+      {!isCollapsed && scriptList}
     </div>
   );
 }

@@ -10,11 +10,14 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    host: "127.0.0.1",
     port: 5173,
+    strictPort: true,
     proxy: {
-      "/api": "http://localhost:3717",
+      // Match API bind host — avoid localhost IPv6/IPv4 mismatch.
+      "/api": "http://127.0.0.1:3717",
       "/ws": {
-        target: "ws://localhost:3717",
+        target: "ws://127.0.0.1:3717",
         ws: true,
       },
     },

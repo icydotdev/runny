@@ -3,3 +3,6 @@ dist
 .turbo
 *.tsbuildinfo
 .DS_Store
+.runny-boot.log
+.tmp-*.txt
+
