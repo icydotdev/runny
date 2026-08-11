@@ -10,15 +10,16 @@
     "dist"
   ],
   "scripts": {
-    "dev:server": "tsx watch src/cli.ts",
+    "dev:server": "tsx watch --clear-screen=false src/cli.ts",
     "dev:client": "vite",
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently -k --kill-signal SIGKILL -n server,client -c blue,magenta \"tsx watch --clear-screen=false src/cli.ts\" \"node ./scripts/wait-and-vite.mjs\"",
     "build:client": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
     "build": "npm run build:client && npm run build:server",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@radix-ui/react-collapsible": "^1.1.20",
     "express": "^5.1.0",
     "fast-glob": "^3.3.3",
     "open": "^10.1.0",
