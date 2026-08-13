@@ -11,6 +11,8 @@ import type { UserConfig } from "../lib/user-config";
 export interface ScriptState {
   status: "idle" | "running" | "stopped" | "errored";
   exitCode: number | null;
+  /** When the process last finished (stopped/errored). */
+  endedAt?: number | null;
 }
 
 export interface FavouriteGroup {
@@ -63,6 +65,8 @@ interface Store {
   /** Soft-CI sessions keyed by id (backend is source of truth). */
   sessions: Map<string, Session>;
   selectedScriptId: string | null;
+  /** When true, session updates auto-select the active step in the terminal. */
+  followActiveSession: boolean;
   searchQuery: string;
   sidebarCollapsed: Map<string, boolean>;
   groupingEnabled: boolean;
@@ -86,6 +90,9 @@ interface Store {
   upsertSession: (session: Session) => void;
   setSessions: (sessions: Session[]) => void;
   selectScript: (id: string | null) => void;
+  /** Cycle terminal selection among currently running scripts. */
+  cycleRunningScript: (delta: -1 | 1) => void;
+  setFollowActiveSession: (follow: boolean) => void;
   setSearchQuery: (query: string) => void;
   togglePackageCollapsed: (packageName: string) => void;
   setAllCollapsed: (collapsed: boolean) => void;
@@ -105,6 +112,14 @@ interface Store {
   reorderFavouriteGroups: (fromIndex: number, toIndex: number) => void;
   moveFavouriteScript: (
     scriptId: string,
+    fromGroupId: string,
+    toGroupId: string,
+    toIndex: number
+  ) => void;
+  /** Copy a script into another favourite group (keeps the source). */
+  copyFavouriteScript: (
+    scriptId: string,
+    fromGroupId: string,
     toGroupId: string,
     toIndex: number
   ) => void;
@@ -124,6 +139,7 @@ export const useStore = create<Store>((set, get) => ({
   scriptStates: new Map(),
   sessions: new Map(),
   selectedScriptId: null,
+  followActiveSession: true,
   searchQuery: "",
   sidebarCollapsed: new Map(),
   groupingEnabled: true,
@@ -155,7 +171,14 @@ export const useStore = create<Store>((set, get) => ({
   setScriptStatus: (id, status, exitCode = null) =>
     set((state) => {
       const next = new Map(state.scriptStates);
-      next.set(id, { status, exitCode });
+      const prev = next.get(id);
+      const endedAt =
+        status === "stopped" || status === "errored"
+          ? Date.now()
+          : status === "running"
+            ? null
+            : (prev?.endedAt ?? null);
+      next.set(id, { status, exitCode, endedAt });
       return { scriptStates: next };
     }),
 
@@ -171,7 +194,30 @@ export const useStore = create<Store>((set, get) => ({
       sessions: new Map(sessions.map((s) => [s.id, s])),
     }),
 
-  selectScript: (id) => set({ selectedScriptId: id }),
+  selectScript: (id) =>
+    set({ selectedScriptId: id, followActiveSession: true }),
+
+  cycleRunningScript: (delta) =>
+    set((state) => {
+      const running = [...state.scriptStates.entries()]
+        .filter(([, s]) => s.status === "running")
+        .map(([id]) => id)
+        .sort((a, b) => a.localeCompare(b));
+      if (running.length === 0) return state;
+
+      const current = state.selectedScriptId;
+      let idx = current ? running.indexOf(current) : -1;
+      if (idx === -1) {
+        idx = delta > 0 ? -1 : 0;
+      }
+      const nextIdx = (idx + delta + running.length) % running.length;
+      return {
+        selectedScriptId: running[nextIdx],
+        followActiveSession: false,
+      };
+    }),
+
+  setFollowActiveSession: (follow) => set({ followActiveSession: follow }),
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 
@@ -338,15 +384,19 @@ export const useStore = create<Store>((set, get) => ({
         (g) => g.id !== groupId
       );
       if (removed && removed.scriptIds.length > 0) {
+        const existing = new Set(favouriteGroups[0].scriptIds);
+        const mergedIds = [
+          ...favouriteGroups[0].scriptIds,
+          ...removed.scriptIds.filter((id) => !existing.has(id)),
+        ];
+        const muted = new Set(favouriteGroups[0].mutedScriptIds ?? []);
+        for (const id of removed.mutedScriptIds ?? []) {
+          if (mergedIds.includes(id)) muted.add(id);
+        }
         favouriteGroups[0] = {
           ...favouriteGroups[0],
-          scriptIds: [...favouriteGroups[0].scriptIds, ...removed.scriptIds],
-          mutedScriptIds: [
-            ...(favouriteGroups[0].mutedScriptIds ?? []),
-            ...(removed.mutedScriptIds ?? []).filter((id) =>
-              removed.scriptIds.includes(id)
-            ),
-          ],
+          scriptIds: mergedIds,
+          mutedScriptIds: Array.from(muted),
         };
       }
       persist({ ...state, favouriteGroups });
@@ -371,7 +421,7 @@ export const useStore = create<Store>((set, get) => ({
       return { favouriteGroups };
     }),
 
-  moveFavouriteScript: (scriptId, toGroupId, toIndex) =>
+  moveFavouriteScript: (scriptId, fromGroupId, toGroupId, toIndex) =>
     set((state) => {
       const favouriteGroups = state.favouriteGroups.map((g) => ({
         ...g,
@@ -379,31 +429,65 @@ export const useStore = create<Store>((set, get) => ({
         mutedScriptIds: [...(g.mutedScriptIds ?? [])],
       }));
 
-      let found = false;
-      let wasMuted = false;
-      for (const g of favouriteGroups) {
-        const idx = g.scriptIds.indexOf(scriptId);
-        if (idx !== -1) {
-          g.scriptIds.splice(idx, 1);
-          const mutedIdx = g.mutedScriptIds.indexOf(scriptId);
-          if (mutedIdx !== -1) {
-            g.mutedScriptIds.splice(mutedIdx, 1);
-            wasMuted = true;
+      const fromGroup = favouriteGroups.find((g) => g.id === fromGroupId);
+      const toGroup = favouriteGroups.find((g) => g.id === toGroupId);
+      if (!fromGroup || !toGroup) return state;
+
+      const fromIndex = fromGroup.scriptIds.indexOf(scriptId);
+      if (fromIndex === -1) return state;
+
+      const wasMuted = fromGroup.mutedScriptIds.includes(scriptId);
+
+      if (fromGroupId === toGroupId) {
+        fromGroup.scriptIds.splice(fromIndex, 1);
+        const clamped = Math.max(
+          0,
+          Math.min(toIndex, fromGroup.scriptIds.length)
+        );
+        fromGroup.scriptIds.splice(clamped, 0, scriptId);
+      } else {
+        fromGroup.scriptIds.splice(fromIndex, 1);
+        const mutedIdx = fromGroup.mutedScriptIds.indexOf(scriptId);
+        if (mutedIdx !== -1) fromGroup.mutedScriptIds.splice(mutedIdx, 1);
+
+        if (!toGroup.scriptIds.includes(scriptId)) {
+          const clamped = Math.max(0, Math.min(toIndex, toGroup.scriptIds.length));
+          toGroup.scriptIds.splice(clamped, 0, scriptId);
+          if (wasMuted && !toGroup.mutedScriptIds.includes(scriptId)) {
+            toGroup.mutedScriptIds.push(scriptId);
           }
-          found = true;
-          break;
         }
       }
-      if (!found) return state;
 
+      persist({ ...state, favouriteGroups });
+      return { favouriteGroups };
+    }),
+
+  copyFavouriteScript: (scriptId, fromGroupId, toGroupId, toIndex) =>
+    set((state) => {
+      if (fromGroupId === toGroupId) return state;
+
+      const favouriteGroups = state.favouriteGroups.map((g) => ({
+        ...g,
+        scriptIds: [...g.scriptIds],
+        mutedScriptIds: [...(g.mutedScriptIds ?? [])],
+      }));
+
+      const fromGroup = favouriteGroups.find((g) => g.id === fromGroupId);
       const toGroup = favouriteGroups.find((g) => g.id === toGroupId);
-      if (!toGroup) return state;
+      if (!fromGroup || !toGroup) return state;
+      if (!fromGroup.scriptIds.includes(scriptId)) return state;
+      if (toGroup.scriptIds.includes(scriptId)) return state;
 
       const clamped = Math.max(0, Math.min(toIndex, toGroup.scriptIds.length));
       toGroup.scriptIds.splice(clamped, 0, scriptId);
-      if (wasMuted && !toGroup.mutedScriptIds.includes(scriptId)) {
+      if (
+        fromGroup.mutedScriptIds.includes(scriptId) &&
+        !toGroup.mutedScriptIds.includes(scriptId)
+      ) {
         toGroup.mutedScriptIds.push(scriptId);
       }
+
       persist({ ...state, favouriteGroups });
       return { favouriteGroups };
     }),
@@ -496,7 +580,9 @@ export const useStore = create<Store>((set, get) => ({
     set(() => {
       const next = new Map<string, ScriptState>();
       for (const s of statuses) {
-        next.set(s.id, { status: s.status, exitCode: s.exitCode });
+        const endedAt =
+          s.status === "stopped" || s.status === "errored" ? s.startedAt : null;
+        next.set(s.id, { status: s.status, exitCode: s.exitCode, endedAt });
       }
       return { scriptStates: next };
     }),

@@ -19,7 +19,7 @@ import type { Express } from "express";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LISTEN_HOST = "127.0.0.1";
 
-function sleep(ms: number) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
@@ -140,14 +140,14 @@ export async function startServer(
   app.use(createScriptsRouter(store, config));
   app.use(createSessionsRouter(store));
 
-  // Serve static frontend (production). In Vite dev, the client is on :5173.
+  // Serve static frontend (production). In Rspack dev, the client is on :5173.
   const clientDir = path.join(__dirname, "..", "client");
   app.use(express.static(clientDir));
   app.get("/{*splat}", (_req, res) => {
     res.sendFile(path.join(clientDir, "index.html"));
   });
 
-  // Bind before package discovery so Vite's proxy has a live target.
+  // Bind before package discovery so the Rspack proxy has a live target.
   const { server, port } = await listenApp(app, preferredPort, {
     allowFallback,
   });

@@ -10,6 +10,7 @@ import {
   Square,
 } from "lucide-react";
 import { ScriptRow } from "./ScriptRow";
+import { fuzzyMatch } from "../lib/fuzzy-search";
 import { useStore, type FavouriteGroup } from "../store/scripts";
 import {
   favouriteSessionPath,
@@ -19,6 +20,24 @@ import {
   type PackageInfo,
   type Session,
 } from "../lib/api";
+
+function scriptMatchesSearch(
+  packages: PackageInfo[],
+  scriptId: string,
+  query: string,
+  descriptions: Record<string, string>
+): boolean {
+  if (!query.trim()) return true;
+  const item = resolveScript(packages, scriptId);
+  if (!item) return false;
+  return fuzzyMatch(
+    query,
+    item.scriptName,
+    item.command,
+    descriptions[scriptId],
+    scriptId
+  );
+}
 
 type DragPayload =
   | { kind: "script"; scriptId: string; fromGroupId: string }
@@ -57,7 +76,13 @@ function FavouriteScriptRow({
   scriptId: string;
   index: number;
   muted: boolean;
-  onDropAt: (scriptId: string, groupId: string, index: number) => void;
+  onDropAt: (
+    scriptId: string,
+    fromGroupId: string,
+    groupId: string,
+    index: number,
+    copy: boolean
+  ) => void;
 }) {
   const packages = useStore((s) => s.packages);
   const toggleFavouriteMute = useStore((s) => s.toggleFavouriteMute);
@@ -72,7 +97,9 @@ function FavouriteScriptRow({
         if (!activeDrag || activeDrag.kind !== "script") return;
         e.preventDefault();
         e.stopPropagation();
-        e.dataTransfer.dropEffect = "move";
+        const copy =
+          e.ctrlKey && activeDrag.fromGroupId !== groupId;
+        e.dataTransfer.dropEffect = copy ? "copy" : "move";
         const rect = e.currentTarget.getBoundingClientRect();
         setDropEdge(e.clientY < rect.top + rect.height / 2 ? "before" : "after");
       }}
@@ -84,7 +111,15 @@ function FavouriteScriptRow({
         setDropEdge(null);
         if (!activeDrag || activeDrag.kind !== "script") return;
         const insertAt = edge === "after" ? index + 1 : index;
-        onDropAt(activeDrag.scriptId, groupId, insertAt);
+        const copy =
+          e.ctrlKey && activeDrag.fromGroupId !== groupId;
+        onDropAt(
+          activeDrag.scriptId,
+          activeDrag.fromGroupId,
+          groupId,
+          insertAt,
+          copy
+        );
         activeDrag = null;
       }}
       style={{
@@ -112,7 +147,7 @@ function FavouriteScriptRow({
             fromGroupId: groupId,
           };
           e.dataTransfer.setData("text/plain", scriptId);
-          e.dataTransfer.effectAllowed = "move";
+          e.dataTransfer.effectAllowed = "copyMove";
         }}
         onDragEnd={() => {
           activeDrag = null;
@@ -148,8 +183,11 @@ function GroupSection({
   const removeFavouriteGroup = useStore((s) => s.removeFavouriteGroup);
   const reorderFavouriteGroups = useStore((s) => s.reorderFavouriteGroups);
   const moveFavouriteScript = useStore((s) => s.moveFavouriteScript);
+  const copyFavouriteScript = useStore((s) => s.copyFavouriteScript);
   const upsertSession = useStore((s) => s.upsertSession);
   const selectScript = useStore((s) => s.selectScript);
+  const searchQuery = useStore((s) => s.searchQuery);
+  const scriptDescriptions = useStore((s) => s.scriptDescriptions);
   const session = useStore((s) => findFavouriteSession(s.sessions, group.id));
 
   const [collapsed, setCollapsed] = useState(false);
@@ -161,9 +199,15 @@ function GroupSection({
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const muted = new Set(group.mutedScriptIds ?? []);
+  const searching = searchQuery.trim().length > 0;
   const resolvedIds = group.scriptIds.filter(
     (id) => resolveScript(packages, id) !== null
   );
+  const visibleIds = searching
+    ? resolvedIds.filter((id) =>
+        scriptMatchesSearch(packages, id, searchQuery, scriptDescriptions)
+      )
+    : group.scriptIds;
   const runnableIds = resolvedIds.filter((id) => !muted.has(id));
   const resolvedCount = resolvedIds.length;
   const runnableCount = runnableIds.length;
@@ -173,6 +217,9 @@ function GroupSection({
   const progress = session
     ? `${session.steps.filter((s) => s.status === "passed" || s.status === "failed" || s.status === "skipped").length}/${session.steps.length}`
     : null;
+
+  // While searching, hide groups with no matches (still allow empty drop target when not searching).
+  if (searching && visibleIds.length === 0) return null;
 
   const handleRun = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -201,16 +248,22 @@ function GroupSection({
 
   const handleScriptDrop = (
     scriptId: string,
+    fromGroupId: string,
     toGroupId: string,
-    toIndex: number
+    toIndex: number,
+    copy: boolean
   ) => {
-    const from = favouriteGroups.find((g) => g.scriptIds.includes(scriptId));
+    if (copy && fromGroupId !== toGroupId) {
+      copyFavouriteScript(scriptId, fromGroupId, toGroupId, toIndex);
+      return;
+    }
     let nextIndex = toIndex;
-    if (from && from.id === toGroupId) {
-      const fromIndex = from.scriptIds.indexOf(scriptId);
+    if (fromGroupId === toGroupId) {
+      const from = favouriteGroups.find((g) => g.id === fromGroupId);
+      const fromIndex = from?.scriptIds.indexOf(scriptId) ?? -1;
       if (fromIndex !== -1 && fromIndex < toIndex) nextIndex -= 1;
     }
-    moveFavouriteScript(scriptId, toGroupId, nextIndex);
+    moveFavouriteScript(scriptId, fromGroupId, toGroupId, nextIndex);
   };
 
   return (
@@ -219,7 +272,11 @@ function GroupSection({
       onDragOver={(e) => {
         if (!activeDrag) return;
         e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
+        const copy =
+          activeDrag.kind === "script" &&
+          e.ctrlKey &&
+          activeDrag.fromGroupId !== group.id;
+        e.dataTransfer.dropEffect = copy ? "copy" : "move";
         setGroupDropActive(true);
       }}
       onDragLeave={() => setGroupDropActive(false)}
@@ -233,10 +290,14 @@ function GroupSection({
           );
           if (fromIndex !== -1) reorderFavouriteGroups(fromIndex, index);
         } else if (activeDrag.kind === "script") {
+          const copy =
+            e.ctrlKey && activeDrag.fromGroupId !== group.id;
           handleScriptDrop(
             activeDrag.scriptId,
+            activeDrag.fromGroupId,
             group.id,
-            group.scriptIds.length
+            group.scriptIds.length,
+            copy
           );
         }
         activeDrag = null;
@@ -372,19 +433,23 @@ function GroupSection({
           {runError}
         </div>
       )}
-      {!collapsed && (
+      {(!collapsed || searching) && (
         <div>
-          {group.scriptIds.map((scriptId, scriptIndex) => (
-            <FavouriteScriptRow
-              key={scriptId}
-              groupId={group.id}
-              scriptId={scriptId}
-              index={scriptIndex}
-              muted={muted.has(scriptId)}
-              onDropAt={handleScriptDrop}
-            />
-          ))}
-          {resolvedCount === 0 && (
+          {(searching ? visibleIds : group.scriptIds).map(
+            (scriptId, scriptIndex) => (
+              <FavouriteScriptRow
+                key={scriptId}
+                groupId={group.id}
+                scriptId={scriptId}
+                index={
+                  searching ? group.scriptIds.indexOf(scriptId) : scriptIndex
+                }
+                muted={muted.has(scriptId)}
+                onDropAt={handleScriptDrop}
+              />
+            )
+          )}
+          {!searching && resolvedCount === 0 && (
             <div
               className="px-3 pb-2 text-[11px]"
               style={{ color: "var(--color-muted)" }}
@@ -392,7 +457,7 @@ function GroupSection({
               Drop scripts here, or star scripts below
             </div>
           )}
-          {resolvedCount > 0 && runnableCount === 0 && (
+          {!searching && resolvedCount > 0 && runnableCount === 0 && (
             <div
               className="px-3 pb-2 text-[11px]"
               style={{ color: "var(--color-muted)" }}

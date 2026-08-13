@@ -36,7 +36,8 @@ export function Header() {
     >
       <div className="flex items-center gap-3">
         <a
-          href="https://www.npmjs.com/package/@icydotdev/runny"
+          href="https://www.npmjs.com/package/@polymech/runny"
+          title="@polymech/runny — fork of icydotdev/runny"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 hover:opacity-80 transition-opacity"

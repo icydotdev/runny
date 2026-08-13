@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Play,
   Square,
@@ -12,12 +12,15 @@ import {
   Volume2,
   VolumeX,
 } from "lucide-react";
-import { StatusBadge } from "./StatusBadge";
+import { StatusBadge, type DisplayStatus } from "./StatusBadge";
 import { useScriptRunner } from "../hooks/useScriptRunner";
-import { useStore } from "../store/scripts";
+import { formatTimeAgo } from "../lib/relative-time";
+import { useStore, type ScriptState } from "../store/scripts";
 import {
   removePackageScript,
   updatePackageScript,
+  type Session,
+  type SessionStep,
 } from "../lib/api";
 
 interface ScriptRowProps {
@@ -60,6 +63,9 @@ export function ScriptRow({
   const { run, stop } = useScriptRunner();
   const id = `${packageName}:${scriptName}`;
   const scriptState = useStore((s) => s.scriptStates.get(id));
+  const sessionStep = useStore((s) =>
+    latestSessionStep(s.sessions, packageName, scriptName)
+  );
   const selectedScriptId = useStore((s) => s.selectedScriptId);
   const selectScript = useStore((s) => s.selectScript);
   const refreshPackages = useStore((s) => s.refreshPackages);
@@ -74,13 +80,28 @@ export function ScriptRow({
   const setScriptDescription = useStore((s) => s.setScriptDescription);
   const [descDraft, setDescDraft] = useState(description ?? "");
 
-  const status = scriptState?.status ?? "idle";
+  const { status, exitCode, endedAt } = resolveDisplayStatus(
+    scriptState,
+    sessionStep
+  );
   const isRunning = status === "running";
+  const isFinished =
+    status === "passed" || status === "failed" || status === "skipped";
   const isSelected = selectedScriptId === id;
   const hoverText = description?.trim() || command;
   const editing = editingDesc || editingScript;
+  // Tick so "Xm ago" stays fresh without a global clock store.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isFinished || endedAt == null) return;
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, [isFinished, endedAt]);
 
   const runCommand = `${packageManager} run ${scriptName}`;
+  const ago = isFinished ? formatTimeAgo(endedAt, now) : "";
+  const stampLabel =
+    status === "passed" ? "done" : status === "failed" ? "fail" : status === "skipped" ? "skip" : "";
 
   const handleCopy = async () => {
     try {
@@ -165,7 +186,9 @@ export function ScriptRow({
       title={editing ? undefined : hoverText}
     >
       <div
-        className={`flex items-center gap-2 py-1.5 cursor-pointer ${indent ? "pl-6 pr-3" : "px-3"}`}
+        className={`flex items-center gap-2 cursor-pointer ${
+          isFinished ? "py-1" : "py-1.5"
+        } ${indent ? "pl-6 pr-3" : "px-3"}`}
         onClick={() => selectScript(id)}
       >
         {draggable && (
@@ -178,16 +201,53 @@ export function ScriptRow({
             <GripVertical size={12} />
           </span>
         )}
-        <StatusBadge status={status} />
+        <StatusBadge status={status} exitCode={exitCode} />
         <span
-          className={`flex-1 truncate ${indent ? "text-xs" : "text-sm"}`}
+          className={`flex-1 truncate ${
+            isFinished ? "text-[10px] leading-tight" : indent ? "text-xs" : "text-sm"
+          }`}
           style={{
-            color: indent ? "var(--color-muted)" : "var(--color-text-secondary)",
+            color:
+              status === "passed"
+                ? "#16a34a"
+                : status === "failed"
+                  ? "#dc2626"
+                  : indent
+                    ? "var(--color-muted)"
+                    : "var(--color-text-secondary)",
             textDecoration: muted ? "line-through" : undefined,
+            opacity: status === "skipped" ? 0.65 : undefined,
           }}
         >
           {scriptName}
         </span>
+        {isFinished && stampLabel && (
+          <span
+            className="shrink-0 inline-flex items-center gap-1 rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide tabular-nums"
+            style={{
+              background:
+                status === "passed"
+                  ? "rgba(34,197,94,0.14)"
+                  : status === "failed"
+                    ? "rgba(239,68,68,0.14)"
+                    : "var(--color-border)",
+              color:
+                status === "passed"
+                  ? "#16a34a"
+                  : status === "failed"
+                    ? "#dc2626"
+                    : "var(--color-muted)",
+            }}
+            title={
+              endedAt
+                ? `${status}${exitCode != null ? ` (exit ${exitCode})` : ""} · ${new Date(endedAt).toLocaleString()}`
+                : status
+            }
+          >
+            {stampLabel}
+            {ago ? <span className="font-normal normal-case tracking-normal opacity-80">{ago}</span> : null}
+          </span>
+        )}
         {onToggleMute && (
           <button
             type="button"
@@ -429,4 +489,89 @@ export function ScriptRow({
       )}
     </div>
   );
+}
+
+/** Most recent session step for this script (covers soft-CI / fav group runs). */
+function latestSessionStep(
+  sessions: Map<string, Session>,
+  packageName: string,
+  scriptName: string
+): SessionStep | undefined {
+  let best: SessionStep | undefined;
+  let bestAt = -1;
+  for (const session of sessions.values()) {
+    for (const step of session.steps) {
+      const pkg = step.packageName ?? session.packageName;
+      if (pkg !== packageName || step.scriptName !== scriptName) continue;
+      const at = step.endedAt ?? step.startedAt ?? session.startedAt;
+      if (at >= bestAt) {
+        bestAt = at;
+        best = step;
+      }
+    }
+  }
+  return best;
+}
+
+function resolveDisplayStatus(
+  scriptState: ScriptState | undefined,
+  sessionStep: SessionStep | undefined
+): {
+  status: DisplayStatus;
+  exitCode: number | null;
+  endedAt: number | null;
+} {
+  // Live process wins while running.
+  if (scriptState?.status === "running") {
+    return { status: "running", exitCode: null, endedAt: null };
+  }
+  if (sessionStep) {
+    if (sessionStep.status === "running") {
+      return { status: "running", exitCode: null, endedAt: null };
+    }
+    if (sessionStep.status === "passed") {
+      return {
+        status: "passed",
+        exitCode: sessionStep.exitCode,
+        endedAt: sessionStep.endedAt ?? scriptState?.endedAt ?? null,
+      };
+    }
+    if (sessionStep.status === "failed") {
+      return {
+        status: "failed",
+        exitCode: sessionStep.exitCode,
+        endedAt: sessionStep.endedAt ?? scriptState?.endedAt ?? null,
+      };
+    }
+    if (sessionStep.status === "skipped") {
+      return {
+        status: "skipped",
+        exitCode: null,
+        endedAt: sessionStep.endedAt ?? scriptState?.endedAt ?? null,
+      };
+    }
+  }
+  if (scriptState?.status === "errored") {
+    return {
+      status: "failed",
+      exitCode: scriptState.exitCode,
+      endedAt: scriptState.endedAt ?? null,
+    };
+  }
+  if (scriptState?.status === "stopped") {
+    const code = scriptState.exitCode;
+    if (code != null && code !== 0) {
+      return {
+        status: "failed",
+        exitCode: code,
+        endedAt: scriptState.endedAt ?? null,
+      };
+    }
+    return {
+      status: "passed",
+      exitCode: code,
+      endedAt: scriptState.endedAt ?? null,
+    };
+  }
+  return { status: "idle", exitCode: null, endedAt: null };
 }

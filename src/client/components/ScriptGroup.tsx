@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Play, Square } from "lucide-react";
 import {
   Collapsible,
@@ -22,12 +22,15 @@ interface ScriptGroupProps {
   packageName: string;
   node: ScriptTreeNode;
   depth?: number;
+  /** When searching: keep trees collapsed; expand per-group on demand. */
+  searchMode?: boolean;
 }
 
 export function ScriptGroupBlock({
   packageName,
   node,
   depth = 0,
+  searchMode = false,
 }: ScriptGroupProps) {
   // Leaf script — no nested children.
   if (node.children.length === 0 && node.script) {
@@ -45,7 +48,7 @@ export function ScriptGroupBlock({
 
   // Group with children (and optional exact script at this path).
   const key = scriptGroupKey(packageName, node.path);
-  const open = useStore((s) => s.expandedScriptGroups.includes(key));
+  const persistedOpen = useStore((s) => s.expandedScriptGroups.includes(key));
   const setScriptGroupExpanded = useStore((s) => s.setScriptGroupExpanded);
   const upsertSession = useStore((s) => s.upsertSession);
   const selectScript = useStore((s) => s.selectScript);
@@ -55,6 +58,13 @@ export function ScriptGroupBlock({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Search: start collapsed; local expand only (don't fight persisted tree state).
+  const [searchOpen, setSearchOpen] = useState(false);
+  useEffect(() => {
+    if (searchMode) setSearchOpen(false);
+  }, [searchMode, key]);
+
+  const open = searchMode ? searchOpen : persistedOpen;
 
   const isActive =
     session?.status === "running" || session?.status === "queued";
@@ -121,7 +131,10 @@ export function ScriptGroupBlock({
   return (
     <Collapsible
       open={open}
-      onOpenChange={(nextOpen) => setScriptGroupExpanded(key, nextOpen)}
+      onOpenChange={(nextOpen) => {
+        if (searchMode) setSearchOpen(nextOpen);
+        else setScriptGroupExpanded(key, nextOpen);
+      }}
     >
       <div
         className="flex items-stretch"
@@ -157,8 +170,18 @@ export function ScriptGroupBlock({
               style={{ color: "var(--color-text-secondary)" }}
             >
               <span className="flex-1 truncate font-medium">{node.label}</span>
-              <span className="text-xs" style={{ color: "var(--color-muted)" }}>
-                {childCount}
+              <span
+                className="text-[10px] tabular-nums shrink-0"
+                style={{ color: "var(--color-muted)" }}
+                title={
+                  searchMode
+                    ? `${childCount} match${childCount === 1 ? "" : "es"}`
+                    : `${childCount} scripts`
+                }
+              >
+                {searchMode
+                  ? `${childCount} match${childCount === 1 ? "" : "es"}`
+                  : childCount}
               </span>
               {runControls}
             </div>
@@ -178,6 +201,7 @@ export function ScriptGroupBlock({
             packageName={packageName}
             node={child}
             depth={depth + 1}
+            searchMode={searchMode}
           />
         ))}
       </CollapsibleContent>

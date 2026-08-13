@@ -32,12 +32,23 @@ while (!(await canConnect())) {
   await new Promise((r) => setTimeout(r, 200));
 }
 
-console.log(`[client] API ready on ${host}:${port}, starting Vite`);
-const viteBin = path.join(adminRoot, "node_modules", "vite", "bin", "vite.js");
-const child = spawn(process.execPath, [viteBin], {
-  stdio: "inherit",
-  cwd: adminRoot,
-});
+console.log(`[client] API ready on ${host}:${port}, starting Rspack`);
+const rspackBin = path.join(
+  adminRoot,
+  "node_modules",
+  "@rspack",
+  "cli",
+  "bin",
+  "rspack.js"
+);
+const child = spawn(
+  process.execPath,
+  [rspackBin, "dev", "--mode", "development"],
+  {
+    stdio: "inherit",
+    cwd: adminRoot,
+  }
+);
 
 child.on("exit", (code, signal) => {
   if (signal) {

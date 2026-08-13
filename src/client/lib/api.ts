@@ -116,6 +116,8 @@ export type SessionStatus =
 
 export interface SessionStep {
   scriptName: string;
+  packageName?: string;
+  packagePath?: string;
   command: string;
   status: SessionStepStatus;
   exitCode: number | null;

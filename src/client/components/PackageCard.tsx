@@ -3,6 +3,7 @@ import { ChevronDown, Package } from "lucide-react";
 import { ScriptGroupBlock } from "./ScriptGroup";
 import { ScriptRow } from "./ScriptRow";
 import { useStore } from "../store/scripts";
+import { fuzzyScore } from "../lib/fuzzy-search";
 import { groupScripts, type ScriptTreeNode } from "../lib/group-scripts";
 import type { PackageInfo } from "../lib/api";
 
@@ -22,13 +23,24 @@ export function PackageCard({ pkg }: PackageCardProps) {
   // Single-package projects: flat list, no package-name chrome.
   const flat = packageCount <= 1;
 
+  const scriptDescriptions = useStore((s) => s.scriptDescriptions);
   const scripts = Object.entries(pkg.scripts).filter(
     ([name]) => !hiddenScripts.includes(`${pkg.name}:${name}`)
   );
   const filteredScripts = searchQuery
-    ? scripts.filter(([name]) =>
-        name.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+    ? scripts
+        .map(([name, command]) => ({
+          entry: [name, command] as [string, string],
+          score: fuzzyScore(
+            searchQuery,
+            name,
+            command,
+            scriptDescriptions[`${pkg.name}:${name}`]
+          ),
+        }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score || a.entry[0].localeCompare(b.entry[0]))
+        .map((x) => x.entry)
     : scripts;
 
   if (filteredScripts.length === 0) return null;
@@ -47,8 +59,10 @@ export function PackageCard({ pkg }: PackageCardProps) {
     return scriptStates.get(id)?.status === "running";
   }).length;
 
+  const searching = searchQuery.trim().length > 0;
+
   const scriptList = (
-    <div className="pb-1">
+    <div className="pb-1" key={searching ? `search:${searchQuery}` : "browse"}>
       {nodes.map((node, i) => (
         <div key={node.path}>
           {i > 0 && (
@@ -61,7 +75,11 @@ export function PackageCard({ pkg }: PackageCardProps) {
             />
           )}
           {groupingEnabled ? (
-            <ScriptGroupBlock packageName={pkg.name} node={node} />
+            <ScriptGroupBlock
+              packageName={pkg.name}
+              node={node}
+              searchMode={searching}
+            />
           ) : (
             node.script && (
               <ScriptRow
@@ -112,10 +130,13 @@ export function PackageCard({ pkg }: PackageCardProps) {
           </span>
         )}
         <span className="text-xs" style={{ color: "var(--color-muted)" }}>
-          {filteredScripts.length}
+          {searching
+            ? `${filteredScripts.length} match${filteredScripts.length === 1 ? "" : "es"}`
+            : filteredScripts.length}
         </span>
       </button>
-      {!isCollapsed && scriptList}
+      {/* Search always reveals matches; tree groups stay collapsed inside. */}
+      {(searching || !isCollapsed) && scriptList}
     </div>
   );
 }

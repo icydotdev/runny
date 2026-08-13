@@ -51,7 +51,7 @@ if (args[0] === "session") {
     portIndex !== -1 ? parseInt(args[portIndex + 1], 10) : 3717;
 
   // Don't pass --no-browser through `tsx watch` (it can swallow unknown flags).
-  // Source/dev mode never auto-opens the API port — use Vite on :5173.
+  // Source/dev mode never auto-opens the API port — use Rspack on :5173.
   const noBrowser =
     args.includes("--no-browser") ||
     process.env.RUNNY_NO_BROWSER === "1" ||
@@ -66,7 +66,7 @@ if (args[0] === "session") {
   }
 
   startServer(targetDir, preferredPort, {
-    // Vite proxies /api and /ws to 127.0.0.1:3717 — never fall back in source/dev.
+    // Rspack proxies /api and /ws to 127.0.0.1:3717 — never fall back in source/dev.
     allowPortFallback: !runningFromSource,
   })
     .then(async ({ port }) => {
